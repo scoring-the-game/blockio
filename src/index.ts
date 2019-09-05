@@ -1,3 +1,4 @@
-import { runGame, DOMDisplay } from './original';
+import { runGame, constructDOMDisplay } from './original';
 import { levelDefns } from '../data/levels';
-runGame(levelDefns, DOMDisplay);
+console.log('index')
+runGame(levelDefns, constructDOMDisplay);

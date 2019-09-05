@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES6",
+    "module": "commonjs",
+    "baseUrl": "./src",
+    "paths": {
+      "~*": ["./*"]
+    },
+    // "noImplicitAny": true,
+    "removeComments": true,
+    "preserveConstEnums": false,
+    "strictNullChecks": true,
+    "noUnusedLocals": true,
+  },
+  "include": ["src/**/*"]
+}

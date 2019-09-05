@@ -1,126 +1,550 @@
-var simpleLevelPlan = `
-......................
-..#................#..
-..#..............=.#..
-..#.........o.o....#..
-..#.@......#####...#..
-..#####............#..
-......#++++++++++++#..
-......##############..
-......................`;
+type TKeys = any;
 
-var Level = class Level {
-  constructor(plan) {
-    let rows = plan.trim().split("\n").map(l => [...l]);
-    this.height = rows.length;
-    this.width = rows[0].length;
-    this.startActors = [];
+// ------------------------------------------------------------
+const flatten = (xs: any[][]): any[] => xs.reduce((xs, x) => [...xs, ...x], []);
 
-    this.rows = rows.map((row, y) => {
-      return row.map((ch, x) => {
-        let type = levelChars[ch];
-        if (typeof type == "string") return type;
-        this.startActors.push(
-          type.create(new Vec(x, y), ch));
-        return "empty";
-      });
-    });
+// ------------------------------------------------------------
+type TPosition = {
+  readonly x: number;
+  readonly y: number;
+};
+
+function constructPosition(x: number, y: number): TPosition {
+  return { x, y };
+}
+
+function positionAdd({ x, y }: TPosition, { dx, dy }: TSize): TPosition {
+  return constructPosition(x + dx, y + dy);
+}
+
+function positionScale(v: TPosition, factor: number): TPosition {
+  return constructPosition(v.x * factor, v.y * factor);
+}
+
+type TSize = {
+  readonly dx: number;
+  readonly dy: number;
+};
+
+function constructSize(dx: number, dy: number): TSize {
+  return { dx, dy };
+}
+
+function sizeScale({ dx, dy }: TSize, factor: number): TSize {
+  return constructSize(dx * factor, dy * factor);
+}
+
+// ------------------------------------------------------------
+type TLevelCharCell = '.' | '#' | '+';
+type TLevelCharActor = '@' | 'o' | '=' | '|' | 'v';
+type TLevelChar = TLevelCharCell | TLevelCharActor;
+
+const enum Cell {
+  empty = 'empty',
+  wall = 'wall',
+  lava = 'lava',
+}
+
+type TRow = Cell[];
+type TRows = TRow[];
+
+type TRowDefn = TLevelChar[];
+type TRowsDefn = TRowDefn[];
+
+/*
+const mapCellFromLevelChar = {
+  '.': 'empty',
+  '#': 'wall',
+  '+': 'lava',
+  '@': createPlayer,
+  o: createCoin,
+  '=': createLava,
+  '|': createLava,
+  v: createLava,
+};
+
+const mapCellFromPlanType = {
+  empty: Cell.empty,
+  wall: Cell.wall,
+  lava: Cell.lava,
+};
+*/
+
+class Level {
+  readonly height: number;
+  readonly width: number;
+  readonly rows: TRows;
+  readonly initialActors: TActor[];
+
+  constructor(plan: string) {
+    console.log('Level#ctor =>', { plan });
+    const rowsDefn: TRowsDefn = plan
+      .trim()
+      .split('\n')
+      .map(l => l.trim().split('')) as TLevelChar[][];
+
+    this.height = rowsDefn.length;
+    this.width = rowsDefn[0].length;
+
+    this.rows = rowsDefn.map((rowDefn: TRowDefn, y: number) =>
+      rowDefn.map((ch: TLevelChar, x: number) => {
+        switch (ch) {
+          case '.':
+            return Cell.empty;
+          case '#':
+            return Cell.wall;
+          case '+':
+            return Cell.lava;
+          case '@':
+          case 'o':
+          case '=':
+          case '|':
+          case 'v':
+            return Cell.empty;
+        }
+      })
+    );
+    console.log('Level#ctor/rows =>', this.rows);
+
+    this.initialActors = flatten(
+      rowsDefn.map((rowDefn: TRowDefn, iRow: number) =>
+        rowDefn
+          .map((ch: TLevelChar, iCol: number) => calcActorFromLevelChar(ch, iCol, iRow))
+          .filter(x => x !== null)
+      )
+    );
+    console.log('Level#ctor/initialActors =>', this.initialActors);
+  }
+
+  touches(pos: TPosition, size: TSize, type: string): boolean {
+    console.log('Level#touches =>', this, { pos, size, type });
+    const xStart = Math.floor(pos.x);
+    const xEnd = Math.ceil(pos.x + size.dx);
+    const yStart = Math.floor(pos.y);
+    const yEnd = Math.ceil(pos.y + size.dy);
+
+    for (let y = yStart; y < yEnd; y++) {
+      for (let x = xStart; x < xEnd; x++) {
+        let isOutside = x < 0 || x >= this.width || y < 0 || y >= this.height;
+        let here = isOutside ? 'wall' : this.rows[y][x];
+        if (here == type) return true;
+      }
+    }
+    return false;
   }
 }
 
-var State = class State {
-  constructor(level, actors, status) {
+function createActor(ch: TLevelCharActor, iCol: number, iRow: number): TActor {
+  console.log('createActor =>', { ch, iCol, iRow });
+  const pos = constructPosition(iCol, iRow);
+
+  switch (ch) {
+    case '@':
+      return createPlayer(pos);
+    case 'o':
+      return createCoin(pos);
+    default:
+      return createLava(pos, ch);
+  }
+}
+
+function calcActorFromLevelChar(ch: TLevelChar, iCol: number, iRow: number): TActor | null {
+  switch (ch) {
+    case '.':
+    case '#':
+    case '+':
+      return null;
+
+    case '@':
+    case 'o':
+    case '=':
+    case '|':
+    case 'v':
+      return createActor(ch, iCol, iRow);
+  }
+}
+
+// ------------------------------------------------------------
+const enum Status {
+  playing = 'playing',
+  lost = 'lost',
+  won = 'won',
+}
+
+// ------------------------------------------------------------
+function updateActor(actor: TActor, time: number, state: State, keys: TKeys): TActor {
+  console.log('updateActor =>', { actor, time, state, keys });
+  switch (actor.type) {
+    case ActorType.player:
+      return updatePlayer(actor, time, state, keys);
+    case ActorType.lava:
+      return updateLava(actor, time, state);
+    case ActorType.coin:
+      return updateCoin(actor, time);
+  }
+}
+
+function collideActor(actor: TLava | TCoin, state: State): State {
+  switch (actor.type) {
+    case ActorType.lava:
+      return collideLava(actor, state);
+    case ActorType.coin:
+      return collideCoin(actor, state);
+  }
+}
+
+class State {
+  readonly level: Level;
+  readonly actors: TActor[];
+  readonly status: Status;
+
+  static start(level: Level): State {
+    console.log('State::start =>', { level });
+    return new State(level, level.initialActors, Status.playing);
+  }
+
+  constructor(level: Level, actors: TActor[], status: Status) {
+    console.log('State#ctor =>', { level, actors, status });
     this.level = level;
     this.actors = actors;
     this.status = status;
   }
 
-  static start(level) {
-    return new State(level, level.startActors, "playing");
+  get player(): TPlayer {
+    return this.actors.find(a => a.type === ActorType.player) as TPlayer;
   }
 
-  get player() {
-    return this.actors.find(a => a.type == "player");
-  }
-}
+  update(time: number, keys: TKeys): State {
+    console.log('State#update =>', this, { time, keys });
 
-var Vec = class Vec {
-  constructor(x, y) {
-    this.x = x; this.y = y;
-  }
-  plus(other) {
-    return new Vec(this.x + other.x, this.y + other.y);
-  }
-  times(factor) {
-    return new Vec(this.x * factor, this.y * factor);
-  }
-}
+    const actors = this.actors.map(actor => {
+      console.log('State#update/1 =>', { actor, time });
+      return updateActor(actor, time, this, keys);
+    });
 
-var Player = class Player {
-  constructor(pos, speed) {
-    this.pos = pos;
-    this.speed = speed;
-  }
+    let newState = new State(this.level, actors, this.status);
+    if (newState.status != Status.playing) return newState;
 
-  get type() { return "player"; }
-
-  static create(pos) {
-    return new Player(pos.plus(new Vec(0, -0.5)),
-                      new Vec(0, 0));
-  }
-}
-
-Player.prototype.size = new Vec(0.8, 1.5);
-
-var Lava = class Lava {
-  constructor(pos, speed, reset) {
-    this.pos = pos;
-    this.speed = speed;
-    this.reset = reset;
-  }
-
-  get type() { return "lava"; }
-
-  static create(pos, ch) {
-    if (ch == "=") {
-      return new Lava(pos, new Vec(2, 0));
-    } else if (ch == "|") {
-      return new Lava(pos, new Vec(0, 2));
-    } else if (ch == "v") {
-      return new Lava(pos, new Vec(0, 3), pos);
+    const player: TPlayer = newState.player;
+    if (this.level.touches(player!.pos, player.size, 'lava')) {
+      return new State(this.level, actors, Status.lost);
     }
+
+    for (const actor of actors) {
+      if (actor.type !== ActorType.player && doesActorOverlapPlayer(actor, player)) {
+        newState = collideActor(actor, newState);
+      }
+    }
+    return newState;
   }
 }
 
-Lava.prototype.size = new Vec(1, 1);
-
-var Coin = class Coin {
-  constructor(pos, basePos, wobble) {
-    this.pos = pos;
-    this.basePos = basePos;
-    this.wobble = wobble;
-  }
-
-  get type() { return "coin"; }
-
-  static create(pos) {
-    let basePos = pos.plus(new Vec(0.2, 0.1));
-    return new Coin(basePos, basePos,
-                    Math.random() * Math.PI * 2);
-  }
-}
-
-Coin.prototype.size = new Vec(0.6, 0.6);
-
-var levelChars = {
-  ".": "empty", "#": "wall", "+": "lava",
-  "@": Player, "o": Coin,
-  "=": Lava, "|": Lava, "v": Lava
+type TRect = {
+  readonly top: number;
+  readonly bottom: number;
+  readonly left: number;
+  readonly right: number;
 };
 
-var simpleLevel = new Level(simpleLevelPlan);
+function calcActorRect({ pos: { x, y }, size: { dx, dy } }: TActor): TRect {
+  const top = y;
+  const bottom = top + dy;
+  const left = x;
+  const right = left + dx;
+  return { top, bottom, left, right };
+}
 
-function elt(name, attrs, ...children) {
+function doesActorOverlapPlayer(actor: TActor, player: TPlayer): boolean {
+  console.log('doesActorOverlapPlayer/0 =>', actor.type);
+  const actorRect = calcActorRect(actor);
+  const playerRect = calcActorRect(player);
+  console.log('doesActorOverlapPlayer/1 =>', actorRect, playerRect);
+
+  const doesOverlap = (
+    actorRect.right > playerRect.left &&
+    actorRect.left < playerRect.right &&
+    actorRect.bottom > playerRect.top &&
+    actorRect.top < playerRect.bottom
+  );
+  console.log('doesActorOverlapPlayer/doesOverlap =>', doesOverlap);
+  return doesOverlap;
+}
+
+// ------------------------------------------------------------
+const enum ActorType {
+  player = 'player',
+  coin = 'coin',
+  lava = 'lava',
+}
+
+// type Actor = Coin | Lava | Player;
+
+type TActorCore = {
+  readonly type: ActorType;
+  readonly pos: TPosition;
+  readonly size: TSize;
+};
+
+type TActor = TPlayer | TLava | TCoin;
+
+// ------------------------------------------------------------
+const kPlayerXSpeed = 7;
+const kGravity = 30;
+const kJumpSpeed = 17;
+
+const playerSize = constructSize(0.8, 1.5);
+const playerInitialOffset = constructSize(0, -0.5);
+const playerInitialSpeed = constructSize(0, 0);
+
+/*
+class Player {
+  readonly size: TSize = playerSize;
+  readonly pos: TPosition;
+  readonly speed: TSize;
+
+  // static create(pos: TPosition): Player {
+  //   return new Player(positionAdd(pos, constructPosition(0, -0.5)), constructPosition(0, 0));
+  // }
+
+  constructor(pos: TPosition, speed: TSize) {
+    this.pos = pos;
+    this.speed = speed;
+  }
+
+  get type(): ActorType {
+    return ActorType.player;
+  }
+
+  update(time: number, state: State, keys: TKeys): Player {
+    console.log('Player#update =>', this, { time, state, keys });
+    let xSpeed = 0;
+    if (keys.ArrowLeft) xSpeed -= kPlayerXSpeed;
+    if (keys.ArrowRight) xSpeed += kPlayerXSpeed;
+    let pos = this.pos;
+    let movedX = positionAdd(pos, constructSize(xSpeed * time, 0));
+    if (!state.level.touches(movedX, this.size, 'wall')) {
+      pos = movedX;
+    }
+
+    let ySpeed = this.speed.dy + time * kGravity;
+    let movedY = positionAdd(pos, constructSize(0, ySpeed * time));
+    if (!state.level.touches(movedY, this.size, 'wall')) {
+      pos = movedY;
+    } else if (keys.ArrowUp && ySpeed > 0) {
+      ySpeed = -kJumpSpeed;
+    } else {
+      ySpeed = 0;
+    }
+    return new Player(pos, constructSize(xSpeed, ySpeed));
+  }
+}
+// */
+
+function createPlayer(pos: TPosition): TPlayer {
+  console.log('createPlayer =>', { pos });
+  // return new Player(positionAdd(pos, playerInitialOffset), playerInitialSpeed);
+  return constructPlayer(positionAdd(pos, playerInitialOffset), playerInitialSpeed);
+}
+
+type TPlayer = TActorCore & {
+  readonly type: ActorType.player;
+  readonly speed: TSize;
+};
+
+function constructPlayer(pos: TPosition, speed: TSize): TPlayer {
+  return { type: ActorType.player, pos, speed, size: playerSize };
+}
+
+function updatePlayer(player: TPlayer, time: number, state: State, keys: TKeys): TPlayer {
+  console.log('updatePlayer =>', player, { time, state, keys });
+  let xSpeed = 0;
+  if (keys.ArrowLeft) xSpeed -= kPlayerXSpeed;
+  if (keys.ArrowRight) xSpeed += kPlayerXSpeed;
+  let pos = player.pos;
+  let movedX = positionAdd(pos, constructSize(xSpeed * time, 0));
+  if (!state.level.touches(movedX, player.size, 'wall')) {
+    pos = movedX;
+  }
+
+  let ySpeed = player.speed.dy + time * kGravity;
+  let movedY = positionAdd(pos, constructSize(0, ySpeed * time));
+  if (!state.level.touches(movedY, player.size, 'wall')) {
+    pos = movedY;
+  } else if (keys.ArrowUp && ySpeed > 0) {
+    ySpeed = -kJumpSpeed;
+  } else {
+    ySpeed = 0;
+  }
+  return constructPlayer(pos, constructSize(xSpeed, ySpeed));
+}
+
+// ------------------------------------------------------------
+type TLavaChar = '=' | '|' | 'v';
+
+type TLava = TActorCore & {
+  readonly type: ActorType.lava;
+  readonly speed: TSize;
+  readonly reset: TPosition | undefined;
+};
+
+const lavaSize = constructSize(1, 1);
+
+// class Lava {
+//   readonly size: TSize = lavaSize;
+//   readonly pos: TPosition;
+//   readonly speed: TSize;
+//   readonly reset: TPosition | undefined;
+//
+//   // static create(pos: TPosition, ch: TLavaChar): Lava {
+//   //   if (ch === '=') return new Lava(pos, constructPosition(2, 0));
+//   //   if (ch === '|') return new Lava(pos, constructPosition(0, 2));
+//   //   /* if (ch === 'v') */ return new Lava(pos, constructPosition(0, 3), pos);
+//   // }
+//
+//   constructor(pos: TPosition, speed: TSize, reset?: TPosition) {
+//     this.pos = pos;
+//     this.speed = speed;
+//     this.reset = reset;
+//   }
+//
+//   get type(): ActorType {
+//     return ActorType.lava;
+//   }
+//
+//   collide(state: State): State {
+//     console.log('Lava#collide =>', this, { state });
+//     return new State(state.level, state.actors, Status.lost);
+//   }
+//
+//   update(time: number, state: State): Lava {
+//     console.log('Lava#update =>', this, { time, state });
+//     let newPos = positionAdd(this.pos, sizeScale(this.speed, time));
+//     if (!state.level.touches(newPos, this.size, 'wall')) {
+//       return new Lava(newPos, this.speed, this.reset);
+//     } else if (this.reset) {
+//       return new Lava(this.reset, this.speed, this.reset);
+//     } else {
+//       return new Lava(this.pos, sizeScale(this.speed, -1));
+//     }
+//   }
+// }
+
+function createLava(pos: TPosition, ch: TLavaChar): TLava {
+  console.log('createLava =>', { pos, ch });
+  if (ch === '=') return constructLava(pos, constructSize(2, 0));
+  if (ch === '|') return constructLava(pos, constructSize(0, 2));
+  /* if (ch === 'v') */ return constructLava(pos, constructSize(0, 3), pos);
+}
+
+function constructLava(pos: TPosition, speed: TSize, reset?: TPosition | undefined): TLava {
+  return { type: ActorType.lava, pos, size: lavaSize, speed, reset };
+}
+
+function collideLava(lava: TLava, state: State): State {
+  console.log('Lava#collide =>', lava, { state });
+  return new State(state.level, state.actors, Status.lost);
+}
+
+function updateLava(lava: TLava, time: number, state: State): TLava {
+  console.log('Lava#update =>', lava, { time, state });
+  let newPos = positionAdd(lava.pos, sizeScale(lava.speed, time));
+  if (!state.level.touches(newPos, lava.size, 'wall')) {
+    return constructLava(newPos, lava.speed, lava.reset);
+  } else if (lava.reset) {
+    return constructLava(lava.reset, lava.speed, lava.reset);
+  } else {
+    return constructLava(lava.pos, sizeScale(lava.speed, -1));
+  }
+}
+
+// ------------------------------------------------------------
+const wobbleSpeed = 8;
+const wobbleDist = 0.07;
+
+const coinSize = constructSize(0.6, 0.6);
+
+type TCoin = TActorCore & {
+  readonly type: ActorType.coin;
+  readonly basePos: TPosition;
+  readonly wobble: number;
+};
+
+// class Coin {
+//   readonly size: TSize = coinSize;
+//   readonly pos: TPosition;
+//   readonly basePos: TPosition;
+//   readonly wobble: number;
+//
+//   // static create(pos: TPosition): Coin {
+//   //   let basePos = positionAdd(pos, constructPosition(0.2, 0.1));
+//   //   return new Coin(basePos, basePos, Math.random() * Math.PI * 2);
+//   // }
+//
+//   constructor(pos: TPosition, basePos: TPosition, wobble: number) {
+//     this.pos = pos;
+//     this.basePos = basePos;
+//     this.wobble = wobble;
+//   }
+//
+//   get type(): ActorType {
+//     return ActorType.coin;
+//   }
+//
+//   collide(state: State): State {
+//     console.log('Coin#collide =>', this, { state });
+//     let filtered = state.actors.filter(a => a != this);
+//     let status = state.status;
+//     if (!filtered.some(a => a.type == ActorType.coin)) status = Status.won;
+//     return new State(state.level, filtered, status);
+//   }
+//
+//   update(time: number): Coin {
+//     console.log('Coin#update =>', this, { time });
+//     let wobble = this.wobble + time * wobbleSpeed;
+//     let wobblePos = Math.sin(wobble) * wobbleDist;
+//     return new Coin(positionAdd(this.basePos, constructSize(0, wobblePos)), this.basePos, wobble);
+//   }
+// }
+
+function createCoin(pos: TPosition): TCoin {
+  console.log('createCoin =>', { pos });
+  const basePos = positionAdd(pos, constructSize(0.2, 0.1));
+  return constructCoin(basePos, basePos, Math.random() * Math.PI * 2);
+}
+
+function constructCoin(pos: TPosition, basePos: TPosition, wobble: number): TCoin {
+  return { type: ActorType.coin, pos, size: coinSize, basePos, wobble };
+}
+
+function collideCoin(coin: TCoin, state: State): State {
+  console.log('Coin#collide =>', { coin, state });
+  let filtered = state.actors.filter(a => a != coin);
+  let status = state.status;
+  if (!filtered.some(a => a.type == ActorType.coin)) status = Status.won;
+  return new State(state.level, filtered, status);
+}
+
+function updateCoin(coin: TCoin, time: number): TCoin {
+  console.log('Coin#update =>', { coin, time });
+  let wobble = coin.wobble + time * wobbleSpeed;
+  let wobblePos = Math.sin(wobble) * wobbleDist;
+  return constructCoin(
+    positionAdd(coin.basePos, constructSize(0, wobblePos)),
+    coin.basePos,
+    wobble
+  );
+}
+
+// ------------------------------------------------------------
+interface IDisplay {
+  clear(): void;
+  syncState(state: State): void;
+  scrollPlayerIntoView(state: State): void;
+}
+
+type TElement = any;
+
+function elt(name: string, attrs: any, ...children: TElement[]): TElement {
   let dom = document.createElement(name);
   for (let attr of Object.keys(attrs)) {
     dom.setAttribute(attr, attrs[attr]);
@@ -131,229 +555,166 @@ function elt(name, attrs, ...children) {
   return dom;
 }
 
-export class DOMDisplay {
-  constructor(parent, level) {
-    this.dom = elt("div", {class: "game"}, drawGrid(level));
+class DOMDisplay implements IDisplay {
+  readonly dom: any;
+  actorLayer: any;
+
+  constructor(parent: any, level: Level) {
+    this.dom = elt('div', { class: 'game' }, drawGrid(level));
     this.actorLayer = null;
     parent.appendChild(this.dom);
   }
 
-  clear() { this.dom.remove(); }
-}
-
-var scale = 20;
-
-function drawGrid(level) {
-  return elt("table", {
-    class: "background",
-    style: `width: ${level.width * scale}px`
-  }, ...level.rows.map(row =>
-    elt("tr", {style: `height: ${scale}px`},
-        ...row.map(type => elt("td", {class: type})))
-  ));
-}
-
-function drawActors(actors) {
-  return elt("div", {}, ...actors.map(actor => {
-    let rect = elt("div", {class: `actor ${actor.type}`});
-    rect.style.width = `${actor.size.x * scale}px`;
-    rect.style.height = `${actor.size.y * scale}px`;
-    rect.style.left = `${actor.pos.x * scale}px`;
-    rect.style.top = `${actor.pos.y * scale}px`;
-    return rect;
-  }));
-}
-
-DOMDisplay.prototype.syncState = function(state) {
-  if (this.actorLayer) this.actorLayer.remove();
-  this.actorLayer = drawActors(state.actors);
-  this.dom.appendChild(this.actorLayer);
-  this.dom.className = `game ${state.status}`;
-  this.scrollPlayerIntoView(state);
-};
-
-DOMDisplay.prototype.scrollPlayerIntoView = function(state) {
-  let width = this.dom.clientWidth;
-  let height = this.dom.clientHeight;
-  let margin = width / 3;
-
-  // The viewport
-  let left = this.dom.scrollLeft, right = left + width;
-  let top = this.dom.scrollTop, bottom = top + height;
-
-  let player = state.player;
-  let center = player.pos.plus(player.size.times(0.5))
-                         .times(scale);
-
-  if (center.x < left + margin) {
-    this.dom.scrollLeft = center.x - margin;
-  } else if (center.x > right - margin) {
-    this.dom.scrollLeft = center.x + margin - width;
+  clear() {
+    this.dom.remove();
   }
-  if (center.y < top + margin) {
-    this.dom.scrollTop = center.y - margin;
-  } else if (center.y > bottom - margin) {
-    this.dom.scrollTop = center.y + margin - height;
+
+  syncState(state: State): void {
+    console.log('DOMDisplay#syncState =>', this, { state });
+    if (this.actorLayer) this.actorLayer.remove();
+    this.actorLayer = drawActors(state.actors);
+    this.dom.appendChild(this.actorLayer);
+    this.dom.className = `game ${state.status}`;
+    this.scrollPlayerIntoView(state);
   }
-};
 
-Level.prototype.touches = function(pos, size, type) {
-  var xStart = Math.floor(pos.x);
-  var xEnd = Math.ceil(pos.x + size.x);
-  var yStart = Math.floor(pos.y);
-  var yEnd = Math.ceil(pos.y + size.y);
+  scrollPlayerIntoView(state: State): void {
+    console.log('DOMDisplay#scrollPlayerIntoView =>', this, { state });
+    let width = this.dom.clientWidth;
+    let height = this.dom.clientHeight;
+    let margin = width / 3;
 
-  for (var y = yStart; y < yEnd; y++) {
-    for (var x = xStart; x < xEnd; x++) {
-      let isOutside = x < 0 || x >= this.width ||
-                      y < 0 || y >= this.height;
-      let here = isOutside ? "wall" : this.rows[y][x];
-      if (here == type) return true;
+    // The viewport
+    let left = this.dom.scrollLeft,
+      right = left + width;
+    let top = this.dom.scrollTop,
+      bottom = top + height;
+
+    let player = state.player;
+    let center = positionScale(positionAdd(player.pos, sizeScale(player.size, 0.5)), scale);
+
+    if (center.x < left + margin) {
+      this.dom.scrollLeft = center.x - margin;
+    } else if (center.x > right - margin) {
+      this.dom.scrollLeft = center.x + margin - width;
+    }
+    if (center.y < top + margin) {
+      this.dom.scrollTop = center.y - margin;
+    } else if (center.y > bottom - margin) {
+      this.dom.scrollTop = center.y + margin - height;
     }
   }
-  return false;
-};
-
-State.prototype.update = function(time, keys) {
-  let actors = this.actors
-    .map(actor => actor.update(time, this, keys));
-  let newState = new State(this.level, actors, this.status);
-
-  if (newState.status != "playing") return newState;
-
-  let player = newState.player;
-  if (this.level.touches(player.pos, player.size, "lava")) {
-    return new State(this.level, actors, "lost");
-  }
-
-  for (let actor of actors) {
-    if (actor != player && overlap(actor, player)) {
-      newState = actor.collide(newState);
-    }
-  }
-  return newState;
-};
-
-function overlap(actor1, actor2) {
-  return actor1.pos.x + actor1.size.x > actor2.pos.x &&
-         actor1.pos.x < actor2.pos.x + actor2.size.x &&
-         actor1.pos.y + actor1.size.y > actor2.pos.y &&
-         actor1.pos.y < actor2.pos.y + actor2.size.y;
 }
 
-Lava.prototype.collide = function(state) {
-  return new State(state.level, state.actors, "lost");
-};
+// ------------------------------------------------------------
+const scale = 20;
 
-Coin.prototype.collide = function(state) {
-  let filtered = state.actors.filter(a => a != this);
-  let status = state.status;
-  if (!filtered.some(a => a.type == "coin")) status = "won";
-  return new State(state.level, filtered, status);
-};
+function drawGrid(level: Level): TElement {
+  console.log('drawGrid');
+  return elt(
+    'table',
+    {
+      class: 'background',
+      style: `width: ${level.width * scale}px`,
+    },
+    ...level.rows.map(row =>
+      elt('tr', { style: `height: ${scale}px` }, ...row.map(type => elt('td', { class: type })))
+    )
+  );
+}
 
-Lava.prototype.update = function(time, state) {
-  let newPos = this.pos.plus(this.speed.times(time));
-  if (!state.level.touches(newPos, this.size, "wall")) {
-    return new Lava(newPos, this.speed, this.reset);
-  } else if (this.reset) {
-    return new Lava(this.reset, this.speed, this.reset);
-  } else {
-    return new Lava(this.pos, this.speed.times(-1));
-  }
-};
+function drawActors(actors: TActor[]): TElement {
+  console.log('drawActors =>', { actors });
+  return elt(
+    'div',
+    {},
+    ...actors.map(actor => {
+      let rect = elt('div', { class: `actor ${actor.type}` });
+      rect.style.width = `${actor.size.dx * scale}px`;
+      rect.style.height = `${actor.size.dy * scale}px`;
+      rect.style.left = `${actor.pos.x * scale}px`;
+      rect.style.top = `${actor.pos.y * scale}px`;
+      return rect;
+    })
+  );
+}
 
-var wobbleSpeed = 8, wobbleDist = 0.07;
-
-Coin.prototype.update = function(time) {
-  let wobble = this.wobble + time * wobbleSpeed;
-  let wobblePos = Math.sin(wobble) * wobbleDist;
-  return new Coin(this.basePos.plus(new Vec(0, wobblePos)),
-                  this.basePos, wobble);
-};
-
-var playerXSpeed = 7;
-var gravity = 30;
-var jumpSpeed = 17;
-
-Player.prototype.update = function(time, state, keys) {
-  let xSpeed = 0;
-  if (keys.ArrowLeft) xSpeed -= playerXSpeed;
-  if (keys.ArrowRight) xSpeed += playerXSpeed;
-  let pos = this.pos;
-  let movedX = pos.plus(new Vec(xSpeed * time, 0));
-  if (!state.level.touches(movedX, this.size, "wall")) {
-    pos = movedX;
-  }
-
-  let ySpeed = this.speed.y + time * gravity;
-  let movedY = pos.plus(new Vec(0, ySpeed * time));
-  if (!state.level.touches(movedY, this.size, "wall")) {
-    pos = movedY;
-  } else if (keys.ArrowUp && ySpeed > 0) {
-    ySpeed = -jumpSpeed;
-  } else {
-    ySpeed = 0;
-  }
-  return new Player(pos, new Vec(xSpeed, ySpeed));
-};
-
-function trackKeys(keys) {
+function trackKeys(keys: TKeys) {
   let down = Object.create(null);
-  function track(event) {
+
+  function track(event: KeyboardEvent) {
     if (keys.includes(event.key)) {
-      down[event.key] = event.type == "keydown";
+      down[event.key] = event.type == 'keydown';
       event.preventDefault();
     }
   }
-  window.addEventListener("keydown", track);
-  window.addEventListener("keyup", track);
+
+  window.addEventListener('keydown', track);
+  window.addEventListener('keyup', track);
   return down;
 }
 
-var arrowKeys =
-  trackKeys(["ArrowLeft", "ArrowRight", "ArrowUp"]);
+const arrowKeys = trackKeys(['ArrowLeft', 'ArrowRight', 'ArrowUp']);
 
-function runAnimation(frameFunc) {
-  let lastTime = null;
-  function frame(time) {
-    if (lastTime != null) {
-      let timeStep = Math.min(time - lastTime, 100) / 1000;
+type TFnAnimationFrame = (millis: number) => boolean;
+
+function runAnimation(frameFunc: TFnAnimationFrame): void {
+  let millisPrev: number | null = null;
+
+  function tick(millis: number) {
+    if (millisPrev !== null) {
+      let timeStep = Math.min(millis - millisPrev, 100) / 1000;
       if (frameFunc(timeStep) === false) return;
     }
-    lastTime = time;
-    requestAnimationFrame(frame);
+    millisPrev = millis;
+    requestAnimationFrame(tick);
   }
-  requestAnimationFrame(frame);
+
+  requestAnimationFrame(tick);
 }
 
-function runLevel(level, Display) {
-  let display = new Display(document.body, level);
+function runLevel(level: Level, constructDisplay: (level: Level) => IDisplay): Promise<Status> {
+  const display = constructDisplay(level);
   let state = State.start(level);
   let ending = 1;
-  return new Promise(resolve => {
-    runAnimation(time => {
-      state = state.update(time, arrowKeys);
-      display.syncState(state);
-      if (state.status == "playing") {
-        return true;
-      } else if (ending > 0) {
-        ending -= time;
-        return true;
-      } else {
-        display.clear();
-        resolve(state.status);
-        return false;
-      }
-    });
-  });
+
+  function update(resolve: Function, millis: number): boolean {
+    state = state.update(millis, arrowKeys);
+    display.syncState(state);
+
+    if (state.status == Status.playing) return true;
+
+    if (ending > 0) {
+      ending -= millis;
+      return true;
+    }
+
+    display.clear();
+    resolve(state.status);
+    return false;
+  }
+
+  return new Promise(resolve => runAnimation(millis => update(resolve, millis)));
 }
 
- export async function runGame(plans, Display) {
-  for (let level = 0; level < plans.length;) {
-    let status = await runLevel(new Level(plans[level]),
-                                Display);
-    if (status == "won") level++;
+export function constructDOMDisplay(level: Level): IDisplay {
+  return new DOMDisplay(document.body, level);
+}
+
+export async function runGame(
+  plans: string[],
+  constructDisplay: (level: Level) => IDisplay
+): Promise<void> {
+  console.log('runGame/0');
+  for (let iLevel = 0; iLevel < plans.length; ) {
+    console.log('runGame/1 =>', iLevel);
+    const plan = plans[iLevel];
+    console.log('runGame/2 =>', plan);
+    const level = new Level(plan);
+    console.log('runGame/3 =>', level);
+    const status = await runLevel(level, constructDisplay);
+    console.log('runGame/4 =>', status);
+    if (status == Status.won) iLevel++;
   }
   console.log("You've won!");
 }
