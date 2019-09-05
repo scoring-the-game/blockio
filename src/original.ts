@@ -240,7 +240,7 @@ const enum Status {
 }
 
 // ------------------------------------------------------------
-function updateActor(actor: TActor, time: number, state: State, keys: TKeys): TActor {
+function updateActor(actor: TActor, time: number, state: TState, keys: TKeys): TActor {
   console.log('updateActor =>', { actor, time, state, keys });
   switch (actor.type) {
     case ActorType.player:
@@ -252,7 +252,7 @@ function updateActor(actor: TActor, time: number, state: State, keys: TKeys): TA
   }
 }
 
-function collideActor(actor: TLava | TCoin, state: State): State {
+function collideActor(actor: TLava | TCoin, state: TState): TState {
   switch (actor.type) {
     case ActorType.lava:
       return collideLava(actor, state);
@@ -261,6 +261,7 @@ function collideActor(actor: TLava | TCoin, state: State): State {
   }
 }
 
+/*
 class State {
   readonly level: TLevel;
   readonly actors: TActor[];
@@ -290,12 +291,12 @@ class State {
       return updateActor(actor, time, this, keys);
     });
 
-    let newState = new State(this.level, actors, this.status);
+    let newState = constructState(this.level, actors, this.status);
     if (newState.status != Status.playing) return newState;
 
     const player: TPlayer = newState.player;
     if (touches(this.level, player!.pos, player.size, 'lava')) {
-      return new State(this.level, actors, Status.lost);
+      return constructState(this.level, actors, Status.lost);
     }
 
     for (const actor of actors) {
@@ -305,6 +306,51 @@ class State {
     }
     return newState;
   }
+}
+*/
+
+type TState = {
+  readonly status: Status;
+  readonly level: TLevel;
+  readonly actors: TActor[];
+};
+
+function startGame(level: TLevel): TState {
+  console.log('State::start =>', { level });
+  return constructState(level, level.initialActors, Status.playing);
+}
+
+function constructState(level: TLevel, actors: TActor[], status: Status): TState {
+  console.log('State#ctor =>', { level, actors, status });
+  return { level, actors, status };
+}
+
+function getPlayer(state: TState): TPlayer {
+  return state.actors.find(a => a.type === ActorType.player) as TPlayer;
+}
+
+function updateState(state: TState, time: number, keys: TKeys): TState {
+  console.log('State#update =>', state, { time, keys });
+
+  const actors = state.actors.map(actor => {
+    console.log('State#update/1 =>', { actor, time });
+    return updateActor(actor, time, state, keys);
+  });
+
+  let newState = constructState(state.level, actors, state.status);
+  if (newState.status != Status.playing) return newState;
+
+  const player: TPlayer = getPlayer(newState);
+  if (touches(state.level, player!.pos, player.size, 'lava')) {
+    return constructState(state.level, actors, Status.lost);
+  }
+
+  for (const actor of actors) {
+    if (actor.type !== ActorType.player && doesActorOverlapPlayer(actor, player)) {
+      newState = collideActor(actor, newState);
+    }
+  }
+  return newState;
 }
 
 type TRect = {
@@ -422,7 +468,7 @@ function constructPlayer(pos: TPosition, speed: TSize): TPlayer {
   return { type: ActorType.player, pos, speed, size: playerSize };
 }
 
-function updatePlayer(player: TPlayer, time: number, state: State, keys: TKeys): TPlayer {
+function updatePlayer(player: TPlayer, time: number, state: TState, keys: TKeys): TPlayer {
   console.log('updatePlayer =>', player, { time, state, keys });
   let xSpeed = 0;
   if (keys.ArrowLeft) xSpeed -= kPlayerXSpeed;
@@ -480,7 +526,7 @@ const lavaSize = constructSize(1, 1);
 //
 //   collide(state: State): State {
 //     console.log('Lava#collide =>', this, { state });
-//     return new State(state.level, state.actors, Status.lost);
+//     return constructState(state.level, state.actors, Status.lost);
 //   }
 //
 //   update(time: number, state: State): Lava {
@@ -507,12 +553,12 @@ function constructLava(pos: TPosition, speed: TSize, reset?: TPosition | undefin
   return { type: ActorType.lava, pos, size: lavaSize, speed, reset };
 }
 
-function collideLava(lava: TLava, state: State): State {
+function collideLava(lava: TLava, state: TState): TState {
   console.log('Lava#collide =>', lava, { state });
-  return new State(state.level, state.actors, Status.lost);
+  return constructState(state.level, state.actors, Status.lost);
 }
 
-function updateLava(lava: TLava, time: number, state: State): TLava {
+function updateLava(lava: TLava, time: number, state: TState): TLava {
   console.log('Lava#update =>', lava, { time, state });
   let newPos = positionAdd(lava.pos, sizeScale(lava.speed, time));
   if (!touches(state.level, newPos, lava.size, 'wall')) {
@@ -562,7 +608,7 @@ type TCoin = TActorCore & {
 //     let filtered = state.actors.filter(a => a != this);
 //     let status = state.status;
 //     if (!filtered.some(a => a.type == ActorType.coin)) status = Status.won;
-//     return new State(state.level, filtered, status);
+//     return constructState(state.level, filtered, status);
 //   }
 //
 //   update(time: number): Coin {
@@ -583,12 +629,12 @@ function constructCoin(pos: TPosition, basePos: TPosition, wobble: number): TCoi
   return { type: ActorType.coin, pos, size: coinSize, basePos, wobble };
 }
 
-function collideCoin(coin: TCoin, state: State): State {
+function collideCoin(coin: TCoin, state: TState): TState {
   console.log('Coin#collide =>', { coin, state });
   let filtered = state.actors.filter(a => a != coin);
   let status = state.status;
   if (!filtered.some(a => a.type == ActorType.coin)) status = Status.won;
-  return new State(state.level, filtered, status);
+  return constructState(state.level, filtered, status);
 }
 
 function updateCoin(coin: TCoin, time: number): TCoin {
@@ -605,8 +651,8 @@ function updateCoin(coin: TCoin, time: number): TCoin {
 // ------------------------------------------------------------
 interface IDisplay {
   clear(): void;
-  syncState(state: State): void;
-  scrollPlayerIntoView(state: State): void;
+  syncState(state: TState): void;
+  scrollPlayerIntoView(state: TState): void;
 }
 
 type TElement = any;
@@ -636,7 +682,7 @@ class DOMDisplay implements IDisplay {
     this.dom.remove();
   }
 
-  syncState(state: State): void {
+  syncState(state: TState): void {
     console.log('DOMDisplay#syncState =>', this, { state });
     if (this.actorLayer) this.actorLayer.remove();
     this.actorLayer = drawActors(state.actors);
@@ -645,7 +691,7 @@ class DOMDisplay implements IDisplay {
     this.scrollPlayerIntoView(state);
   }
 
-  scrollPlayerIntoView(state: State): void {
+  scrollPlayerIntoView(state: TState): void {
     console.log('DOMDisplay#scrollPlayerIntoView =>', this, { state });
     let width = this.dom.clientWidth;
     let height = this.dom.clientHeight;
@@ -657,7 +703,7 @@ class DOMDisplay implements IDisplay {
     let top = this.dom.scrollTop,
       bottom = top + height;
 
-    let player = state.player;
+    let player = getPlayer(state);
     let center = positionScale(positionAdd(player.pos, sizeScale(player.size, 0.5)), scale);
 
     if (center.x < left + margin) {
@@ -742,11 +788,11 @@ function runAnimation(frameFunc: TFnAnimationFrame): void {
 
 function runLevel(level: TLevel, constructDisplay: (level: TLevel) => IDisplay): Promise<Status> {
   const display = constructDisplay(level);
-  let state = State.start(level);
+  let state = startGame(level);
   let ending = 1;
 
   function update(resolve: Function, millis: number): boolean {
-    state = state.update(millis, arrowKeys);
+    state = updateState(state, millis, arrowKeys);
     display.syncState(state);
 
     if (state.status == Status.playing) return true;
