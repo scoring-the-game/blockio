@@ -70,6 +70,14 @@ const mapCellFromPlanType = {
 };
 */
 
+type TLevel = {
+  readonly width: number;
+  readonly height: number;
+  readonly rows: TRows;
+  readonly initialActors: TActor[];
+};
+
+/*
 class Level {
   readonly height: number;
   readonly width: number;
@@ -133,6 +141,7 @@ class Level {
     return false;
   }
 }
+*/
 
 function createActor(ch: TLevelCharActor, iCol: number, iRow: number): TActor {
   console.log('createActor =>', { ch, iCol, iRow });
@@ -162,6 +171,65 @@ function calcActorFromLevelChar(ch: TLevelChar, iCol: number, iRow: number): TAc
     case 'v':
       return createActor(ch, iCol, iRow);
   }
+}
+
+function constructLevel(plan: string): TLevel {
+  console.log('constructLevel =>', { plan });
+  const rowsDefn: TRowsDefn = plan
+    .trim()
+    .split('\n')
+    .map(l => l.trim().split('')) as TLevelChar[][];
+
+  const width = rowsDefn[0].length;
+  const height = rowsDefn.length;
+
+  const rows = rowsDefn.map((rowDefn: TRowDefn, y: number) =>
+    rowDefn.map((ch: TLevelChar, x: number) => {
+      switch (ch) {
+        case '.':
+          return Cell.empty;
+        case '#':
+          return Cell.wall;
+        case '+':
+          return Cell.lava;
+        case '@':
+        case 'o':
+        case '=':
+        case '|':
+        case 'v':
+          return Cell.empty;
+      }
+    })
+  );
+  console.log('constructLevel/rows =>', rows);
+
+  const initialActors = flatten(
+    rowsDefn.map((rowDefn: TRowDefn, iRow: number) =>
+      rowDefn
+        .map((ch: TLevelChar, iCol: number) => calcActorFromLevelChar(ch, iCol, iRow))
+        .filter(x => x !== null)
+    )
+  );
+  console.log('constructLevel/initialActors =>', initialActors);
+
+  return { width, height, rows, initialActors };
+}
+
+function touches(level: TLevel, pos: TPosition, size: TSize, type: string): boolean {
+  console.log('Level#touches =>', level, { pos, size, type });
+  const xStart = Math.floor(pos.x);
+  const xEnd = Math.ceil(pos.x + size.dx);
+  const yStart = Math.floor(pos.y);
+  const yEnd = Math.ceil(pos.y + size.dy);
+
+  for (let y = yStart; y < yEnd; y++) {
+    for (let x = xStart; x < xEnd; x++) {
+      let isOutside = x < 0 || x >= level.width || y < 0 || y >= level.height;
+      let here = isOutside ? 'wall' : level.rows[y][x];
+      if (here == type) return true;
+    }
+  }
+  return false;
 }
 
 // ------------------------------------------------------------
@@ -194,16 +262,16 @@ function collideActor(actor: TLava | TCoin, state: State): State {
 }
 
 class State {
-  readonly level: Level;
+  readonly level: TLevel;
   readonly actors: TActor[];
   readonly status: Status;
 
-  static start(level: Level): State {
+  static start(level: TLevel): State {
     console.log('State::start =>', { level });
     return new State(level, level.initialActors, Status.playing);
   }
 
-  constructor(level: Level, actors: TActor[], status: Status) {
+  constructor(level: TLevel, actors: TActor[], status: Status) {
     console.log('State#ctor =>', { level, actors, status });
     this.level = level;
     this.actors = actors;
@@ -226,7 +294,7 @@ class State {
     if (newState.status != Status.playing) return newState;
 
     const player: TPlayer = newState.player;
-    if (this.level.touches(player!.pos, player.size, 'lava')) {
+    if (touches(this.level, player!.pos, player.size, 'lava')) {
       return new State(this.level, actors, Status.lost);
     }
 
@@ -260,12 +328,11 @@ function doesActorOverlapPlayer(actor: TActor, player: TPlayer): boolean {
   const playerRect = calcActorRect(player);
   console.log('doesActorOverlapPlayer/1 =>', actorRect, playerRect);
 
-  const doesOverlap = (
+  const doesOverlap =
     actorRect.right > playerRect.left &&
     actorRect.left < playerRect.right &&
     actorRect.bottom > playerRect.top &&
-    actorRect.top < playerRect.bottom
-  );
+    actorRect.top < playerRect.bottom;
   console.log('doesActorOverlapPlayer/doesOverlap =>', doesOverlap);
   return doesOverlap;
 }
@@ -362,13 +429,13 @@ function updatePlayer(player: TPlayer, time: number, state: State, keys: TKeys):
   if (keys.ArrowRight) xSpeed += kPlayerXSpeed;
   let pos = player.pos;
   let movedX = positionAdd(pos, constructSize(xSpeed * time, 0));
-  if (!state.level.touches(movedX, player.size, 'wall')) {
+  if (!touches(state.level, movedX, player.size, 'wall')) {
     pos = movedX;
   }
 
   let ySpeed = player.speed.dy + time * kGravity;
   let movedY = positionAdd(pos, constructSize(0, ySpeed * time));
-  if (!state.level.touches(movedY, player.size, 'wall')) {
+  if (!touches(state.level, movedY, player.size, 'wall')) {
     pos = movedY;
   } else if (keys.ArrowUp && ySpeed > 0) {
     ySpeed = -kJumpSpeed;
@@ -448,7 +515,7 @@ function collideLava(lava: TLava, state: State): State {
 function updateLava(lava: TLava, time: number, state: State): TLava {
   console.log('Lava#update =>', lava, { time, state });
   let newPos = positionAdd(lava.pos, sizeScale(lava.speed, time));
-  if (!state.level.touches(newPos, lava.size, 'wall')) {
+  if (!touches(state.level, newPos, lava.size, 'wall')) {
     return constructLava(newPos, lava.speed, lava.reset);
   } else if (lava.reset) {
     return constructLava(lava.reset, lava.speed, lava.reset);
@@ -559,7 +626,7 @@ class DOMDisplay implements IDisplay {
   readonly dom: any;
   actorLayer: any;
 
-  constructor(parent: any, level: Level) {
+  constructor(parent: any, level: TLevel) {
     this.dom = elt('div', { class: 'game' }, drawGrid(level));
     this.actorLayer = null;
     parent.appendChild(this.dom);
@@ -609,7 +676,7 @@ class DOMDisplay implements IDisplay {
 // ------------------------------------------------------------
 const scale = 20;
 
-function drawGrid(level: Level): TElement {
+function drawGrid(level: TLevel): TElement {
   console.log('drawGrid');
   return elt(
     'table',
@@ -673,7 +740,7 @@ function runAnimation(frameFunc: TFnAnimationFrame): void {
   requestAnimationFrame(tick);
 }
 
-function runLevel(level: Level, constructDisplay: (level: Level) => IDisplay): Promise<Status> {
+function runLevel(level: TLevel, constructDisplay: (level: TLevel) => IDisplay): Promise<Status> {
   const display = constructDisplay(level);
   let state = State.start(level);
   let ending = 1;
@@ -697,20 +764,20 @@ function runLevel(level: Level, constructDisplay: (level: Level) => IDisplay): P
   return new Promise(resolve => runAnimation(millis => update(resolve, millis)));
 }
 
-export function constructDOMDisplay(level: Level): IDisplay {
+export function constructDOMDisplay(level: TLevel): IDisplay {
   return new DOMDisplay(document.body, level);
 }
 
 export async function runGame(
   plans: string[],
-  constructDisplay: (level: Level) => IDisplay
+  constructDisplay: (level: TLevel) => IDisplay
 ): Promise<void> {
   console.log('runGame/0');
   for (let iLevel = 0; iLevel < plans.length; ) {
     console.log('runGame/1 =>', iLevel);
     const plan = plans[iLevel];
     console.log('runGame/2 =>', plan);
-    const level = new Level(plan);
+    const level = constructLevel(plan);
     console.log('runGame/3 =>', level);
     const status = await runLevel(level, constructDisplay);
     console.log('runGame/4 =>', status);
