@@ -15,7 +15,7 @@
   },
   "scripts": {
     "serve": "parcel -p 4321 index.html",
-    "tsc-check": "tsc --watch --project . --noEmit",
+    "tsc-check": "tsc --noEmit --watch --project . ",
     "prettier-check": "prettier --single-quote --trailing-comma es5 --print-width 100 --list-different ./src/*.ts ./src/*.tsx",
     "prettier": "yarn prettier-check --write"
   }
