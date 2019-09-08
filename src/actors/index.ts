@@ -13,7 +13,7 @@ export type TLevelCharActor = '@' | 'o' | '=' | '|' | 'v';
 
 // ------------------------------------------------------------
 export function updateActor(actor: TActor, time: number, level: TLevel, keymap: TKeymap): TActor {
-  console.log('updateActor =>', { actor, time, level, keymap });
+  // console.log('updateActor =>', { actor, time, level, keymap });
   switch (actor.type) {
     case ActorType.player:
       return updatePlayer(actor, time, level, keymap);

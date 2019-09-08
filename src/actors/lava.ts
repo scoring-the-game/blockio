@@ -34,7 +34,7 @@ export function createLava(pos: TCoord, ch: TLavaChar): TLava {
 }
 
 export function updateLava(lava: TLava, time: number, level: TLevel): TLava {
-  console.log('Lava#update =>', lava, { time, level });
+  // console.log('Lava#update =>', lava, { time, level });
   let newPos = coordAdd(lava.pos, sizeScale(lava.speed, time));
   if (!touches(level, newPos, lava.size, 'wall')) {
     return constructLava(newPos, lava.speed, lava.reset);

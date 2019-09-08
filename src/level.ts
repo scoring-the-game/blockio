@@ -6,14 +6,14 @@ import { TActor, TLevelCharActor, createActor } from './actors';
 type TLevelCharCell = '.' | '#' | '+';
 type TLevelChar = TLevelCharCell | TLevelCharActor;
 
-const enum Cell {
+export const enum Cell {
   empty = 'empty',
   wall = 'wall',
   lava = 'lava',
 }
 
-type TRow = Cell[];
-type TRows = TRow[];
+export type TRow = Cell[];
+export type TRows = TRow[];
 
 type TRowDefn = TLevelChar[];
 type TRowsDefn = TRowDefn[];
@@ -102,7 +102,7 @@ export function constructLevel(plan: string): TLevel {
 }
 
 export function touches(level: TLevel, pos: TCoord, size: TSize, type: string): boolean {
-  console.log('Level#touches =>', level, { pos, size, type });
+  // console.log('Level#touches =>', level, { pos, size, type });
   const xStart = Math.floor(pos.x);
   const xEnd = Math.ceil(pos.x + size.dx);
   const yStart = Math.floor(pos.y);

@@ -31,7 +31,7 @@ export function createCoin(pos: TCoord): TCoin {
 }
 
 export function updateCoin(coin: TCoin, time: number): TCoin {
-  console.log('Coin#update =>', { coin, time });
+  // console.log('Coin#update =>', { coin, time });
   let wobble = coin.wobble + time * wobbleSpeed;
   let wobblePos = Math.sin(wobble) * wobbleDist;
   return constructCoin(coordAdd(coin.basePos, constructSize(0, wobblePos)), coin.basePos, wobble);

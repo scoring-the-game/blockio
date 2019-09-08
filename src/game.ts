@@ -1,8 +1,8 @@
 import { TKeymap } from './typedefs';
 import { TLevel, constructLevel } from './level';
 import { Status, createState, updateState } from './state';
-import { constructDisplay } from './display';
 import { startKeyboardListener } from './keymap';
+import { createDisplay, syncDisplayToState, clearDisplay } from './display';
 
 type TFnAnimationFrame = (dt: number) => boolean;
 
@@ -23,13 +23,13 @@ function runAnimation(frameFunc: TFnAnimationFrame): void {
 }
 
 function runLevel(level: TLevel, getKeymap: () => TKeymap): Promise<Status> {
-  const display = constructDisplay(level);
+  let display = createDisplay(level);
   let state = createState(level);
   let ending = 1;
 
   function update(resolve: Function, millis: number): boolean {
     state = updateState(state, millis, getKeymap());
-    display.syncState(state);
+    display = syncDisplayToState(display, state);
 
     if (state.status == Status.playing) return true;
 
@@ -38,7 +38,7 @@ function runLevel(level: TLevel, getKeymap: () => TKeymap): Promise<Status> {
       return true;
     }
 
-    display.clear();
+    clearDisplay(display);
     resolve(state.status);
     return false;
   }

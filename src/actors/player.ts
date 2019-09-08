@@ -36,7 +36,7 @@ export function createPlayer(pos: TCoord): TPlayer {
 }
 
 export function updatePlayer(player: TPlayer, time: number, level: TLevel, keymap: TKeymap): TPlayer {
-  console.log('updatePlayer =>', player, { time, level, keymap });
+  // console.log('updatePlayer =>', player, { time, level, keymap });
   let xSpeed = 0;
   if (keymap[Key.arrowLeft]) xSpeed -= kPlayerXSpeed;
   if (keymap[Key.arrowRight]) xSpeed += kPlayerXSpeed;

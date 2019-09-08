@@ -31,7 +31,7 @@ export function getPlayer(state: TState): TPlayer {
 }
 
 export function updateState(state: TState, time: number, keymap: TKeymap): TState {
-  console.log('State#update =>', state, { time, keymap });
+  // console.log('State#update =>', state, { time, keymap });
 
   const actors = state.actors.map(actor => {
     return updateActor(actor, time, state.level, keymap);
@@ -91,16 +91,16 @@ function calcActorRect({ pos: { x, y }, size: { dx, dy } }: TActor): TRect {
 }
 
 function doesActorOverlapPlayer(actor: TActor, player: TPlayer): boolean {
-  console.log('doesActorOverlapPlayer/0 =>', actor.type);
+  // console.log('doesActorOverlapPlayer/0 =>', actor.type);
   const actorRect = calcActorRect(actor);
   const playerRect = calcActorRect(player);
-  console.log('doesActorOverlapPlayer/1 =>', actorRect, playerRect);
+  // console.log('doesActorOverlapPlayer/1 =>', actorRect, playerRect);
 
   const doesOverlap =
     actorRect.right > playerRect.left &&
     actorRect.left < playerRect.right &&
     actorRect.bottom > playerRect.top &&
     actorRect.top < playerRect.bottom;
-  console.log('doesActorOverlapPlayer/doesOverlap =>', doesOverlap);
+  // console.log('doesActorOverlapPlayer/doesOverlap =>', doesOverlap);
   return doesOverlap;
 }
