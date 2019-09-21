@@ -13,6 +13,6 @@ export function coordAdd({ x, y }: TCoord, { dx, dy }: TSize): TCoord {
   return constructCoord(x + dx, y + dy);
 }
 
-export function coordScale(v: TCoord, factor: number): TCoord {
-  return constructCoord(v.x * factor, v.y * factor);
+export function coordScale({ x, y }: TCoord, factor: number): TCoord {
+  return constructCoord(x * factor, y * factor);
 }
